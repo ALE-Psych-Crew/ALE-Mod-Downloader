@@ -20,7 +20,7 @@ This mod adds an in-game browser so players can search, preview, and install ALE
 
 1. Enable/select this mod in the ALE Psych Mods menu.
 2. Go to the Main Menu.
-3. Press `M` to open **GameBanana Mod Downloader**.
+3. Press `M` (or tap the on-screen `M` button on mobile) to open **GameBanana Mod Downloader**.
 
 ### Basic controls
 
@@ -33,6 +33,15 @@ This mod adds an in-game browser so players can search, preview, and install ALE
 - `Click thumbnail` - open mod details
 - `R` - reload current list
 - `C` - open GameBanana category page in browser
+
+### Android/mobile controls
+
+- On mobile, on-screen buttons are created automatically:
+  - `A` = accept/open/download
+  - `B` = back/close
+  - `L/U/R/D` = page/selection navigation
+  - `T` = search mode, `R` = reload, `C` = category page
+- Touching thumbnails and detail buttons also works.
 
 ### Install result
 

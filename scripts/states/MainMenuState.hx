@@ -137,7 +137,7 @@ if (CoolUtil.onlineVersion != null && CoolUtil.onlineVersion != CoolVars.engineV
     version.addFormat(new flixel.text.FlxTextFormat(FlxColor.RED), prefix.length, prefix.length + CoolVars.engineVersion.length);
 }
 
-modDownloaderHint = new FlxText(0, 0, FlxG.width, 'Press M to open GameBanana Mod Downloader');
+modDownloaderHint = new FlxText(0, 0, FlxG.width, CoolVars.mobile ? 'Tap M button to open GameBanana Mod Downloader' : 'Press M to open GameBanana Mod Downloader');
 modDownloaderHint.setFormat(Paths.font('vcr.ttf'), 24, FlxColor.WHITE, 'center', FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
 modDownloaderHint.borderSize = 1.125;
 modDownloaderHint.scrollFactor.set();
@@ -153,7 +153,7 @@ function postUpdate(elapsed:Float)
 {
     game.camGame.scroll.y = CoolUtil.fpsLerp(game.camGame.scroll.y, selInt * OPTION_SPACE - FlxG.height * (0.25 + 0.5 * selInt / options.length), CAMERA_SPEED);
 
-    if (canSelect && FlxG.keys.justPressed.M)
+    if (canSelect && (FlxG.keys.justPressed.M || Controls.anyJustPressed([FlxKey.M])))
         openDownloader();
 
     if (canSelect)
@@ -201,6 +201,10 @@ function onDestroy()
 MobileAPI.createButtons(FlxG.width - 300, FlxG.height - 200, [
     {label: 'A', keys: ClientPrefs.controls.ui.accept},
     {label: 'B', keys: ClientPrefs.controls.ui.back},
+]);
+
+MobileAPI.createButtons(FlxG.width - 170, FlxG.height - 330, [
+    {label: 'M', keys: [FlxKey.M]},
 ]);
 
 MobileAPI.createButtons(100, FlxG.height - 200, [

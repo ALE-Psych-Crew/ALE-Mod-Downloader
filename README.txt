@@ -4,9 +4,16 @@ NOTE:
 - Compatible on Android, Windows, macOS, and Linux.
 - Uses built-in HTTP + ZIP handling (no curl/wget required).
 
+Android/mobile controls:
+- A = accept/open/download
+- B = back/close
+- L/U/R/D = navigation
+- T = search mode, R = reload, C = category page
+- Touch on thumbnails/buttons is supported
+
 How to use:
 1) Select this mod in the ALE Psych Mods menu.
-2) Go to Main Menu and press M.
+2) Go to Main Menu and press M (or tap on-screen M button on mobile).
 3) Use T to type a search query, ENTER to apply.
 4) Use arrows to select mods, ENTER to download and install.
 

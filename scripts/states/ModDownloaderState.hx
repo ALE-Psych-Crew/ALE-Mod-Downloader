@@ -1,4 +1,5 @@
 import flixel.text.FlxText.FlxTextBorderStyle;
+import api.MobileAPI;
 import haxe.Http;
 import haxe.io.Bytes;
 import haxe.zip.Reader;
@@ -289,6 +290,8 @@ btnCloseText.borderSize = 1;
 btnCloseText.visible = false;
 add(btnCloseText);
 
+setupMobileButtons();
+
 function onUpdate(elapsed:Float)
 {
     if (pendingInitialLoad)
@@ -307,7 +310,7 @@ function onUpdate(elapsed:Float)
 
     if (typingSearch)
     {
-        if (FlxG.keys.justPressed.ENTER)
+        if (Controls.ACCEPT || FlxG.keys.justPressed.ENTER)
         {
             typingSearch = false;
             backspaceHeld = false;
@@ -318,7 +321,7 @@ function onUpdate(elapsed:Float)
             return;
         }
 
-        if (FlxG.keys.justPressed.ESCAPE)
+        if (Controls.BACK || FlxG.keys.justPressed.ESCAPE)
         {
             typingSearch = false;
             backspaceHeld = false;
@@ -395,7 +398,7 @@ function onUpdate(elapsed:Float)
         return;
     }
 
-    if (FlxG.keys.justPressed.T)
+    if (isSearchActionPressed())
     {
         typingSearch = true;
         backspaceHeld = false;
@@ -404,13 +407,13 @@ function onUpdate(elapsed:Float)
         return;
     }
 
-    if (FlxG.keys.justPressed.R && !loadingList && !downloading)
+    if (isReloadActionPressed() && !loadingList && !downloading)
     {
         loadModList();
         return;
     }
 
-    if (FlxG.keys.justPressed.C)
+    if (isCategoryActionPressed())
     {
         CoolUtil.browserLoad(categoryUrl);
         setStatus('Opened category page in browser.', FlxColor.GREEN);
@@ -512,10 +515,57 @@ function onUpdate(elapsed:Float)
 
 function onDestroy()
 {
+    if (CoolVars.mobile)
+        MobileAPI.destroyButtons(false);
+
     if (config.deleteTempOnExit)
         cleanupTemp();
     if (config.deleteCacheOnExit)
         cleanupCache();
+}
+
+function setupMobileButtons()
+{
+    if (!CoolVars.mobile)
+        return;
+
+    MobileAPI.destroyButtons(false);
+
+    MobileAPI.createButtons(FlxG.width - 110, FlxG.height - 110, [
+        {label: 'A', keys: ClientPrefs.controls.ui.accept}
+    ], null, false);
+
+    MobileAPI.createButtons(110, FlxG.height - 110, [
+        {label: 'B', keys: ClientPrefs.controls.ui.back}
+    ], null, false);
+
+    MobileAPI.createButtons(110, FlxG.height - 260, [
+        {label: 'L', keys: ClientPrefs.controls.ui.left},
+        {label: 'U', keys: ClientPrefs.controls.ui.up},
+        {label: 'R', keys: ClientPrefs.controls.ui.right},
+        {label: 'D', keys: ClientPrefs.controls.ui.down}
+    ], 88, false);
+
+    MobileAPI.createButtons(FlxG.width - 290, FlxG.height - 200, [
+        {label: 'T', keys: [flixel.input.keyboard.FlxKey.T]},
+        {label: 'R', keys: [flixel.input.keyboard.FlxKey.R]},
+        {label: 'C', keys: [flixel.input.keyboard.FlxKey.C]}
+    ], 74, false);
+}
+
+function isSearchActionPressed():Bool
+{
+    return FlxG.keys.justPressed.T || Controls.anyJustPressed([flixel.input.keyboard.FlxKey.T]);
+}
+
+function isReloadActionPressed():Bool
+{
+    return FlxG.keys.justPressed.R || Controls.anyJustPressed([flixel.input.keyboard.FlxKey.R]);
+}
+
+function isCategoryActionPressed():Bool
+{
+    return FlxG.keys.justPressed.C || Controls.anyJustPressed([flixel.input.keyboard.FlxKey.C]);
 }
 
 function loadConfig()
