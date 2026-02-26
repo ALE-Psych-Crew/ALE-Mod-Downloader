@@ -1,4 +1,7 @@
 import flixel.text.FlxText.FlxTextBorderStyle;
+import haxe.Http;
+import haxe.io.Bytes;
+import haxe.zip.Reader;
 
 using StringTools;
 
@@ -601,34 +604,24 @@ function startBackgroundListFetch(url:String):Bool
     if (FileSystem.exists(listFetchDonePath)) FileSystem.deleteFile(listFetchDonePath);
     if (FileSystem.exists(listFetchErrPath)) FileSystem.deleteFile(listFetchErrPath);
 
-    var qUrl:String = shellQuote(url);
-    var qOut:String = shellQuote(listFetchOutPath);
-    var qDone:String = shellQuote(listFetchDonePath);
-    var qErr:String = shellQuote(listFetchErrPath);
+    var requestUrl:String = url;
+    var outPath:String = listFetchOutPath;
+    var donePath:String = listFetchDonePath;
+    var errPath:String = listFetchErrPath;
 
-    var cmd:String =
-        '(command -v curl >/dev/null 2>&1 && '
-        + 'curl -fsSL --compressed --max-time 35 -A ALEPsychModDownloader/1.4 ' + qUrl + ' -o ' + qOut + ' 2>' + qErr
-        + ' || wget -qO ' + qOut + ' --timeout=35 --user-agent=ALEPsychModDownloader/1.4 ' + qUrl + ' 2>' + qErr + ')'
-        + ' && echo OK > ' + qDone
-        + ' || echo FAIL > ' + qDone;
+    CoolUtil.createSafeThread(function()
+    {
+        var res:Dynamic = httpGetTextRequest(requestUrl, 35, 'ALEPsychModDownloader/1.4', null);
+        if (res.ok)
+            File.saveContent(outPath, Std.string(res.data));
+        else if (Std.string(res.err).length > 0)
+            File.saveContent(errPath, Std.string(res.err));
 
-    var proc:Process = null;
-    try
-    {
-        proc = new Process('sh', ['-c', 'nohup sh -c ' + shellQuote(cmd) + ' >/dev/null 2>&1 &']);
-        proc.close();
-        listFetchActive = true;
-        return true;
-    }
-    catch (e:Dynamic)
-    {
-        if (proc != null)
-            proc.close();
-        lastNetworkError = trimError(Std.string(e));
-        listFetchActive = false;
-        return false;
-    }
+        File.saveContent(donePath, res.ok ? 'OK' : 'FAIL');
+    });
+
+    listFetchActive = true;
+    return true;
 }
 
 function pollListFetch()
@@ -774,41 +767,45 @@ function startBackgroundDetailFetch(modId:Int):Bool
     if (FileSystem.exists(detailFetchErrPath)) FileSystem.deleteFile(detailFetchErrPath);
 
     var url:String = 'https://gamebanana.com/apiv11/Mod/' + modId + '/ProfilePage';
-    var qUrl:String = shellQuote(url);
-    var qOut:String = shellQuote(detailFetchOutPath);
-    var qDone:String = shellQuote(detailFetchDonePath);
-    var qErr:String = shellQuote(detailFetchErrPath);
-
     var pageUrl:String = 'https://gamebanana.com/mods/' + modId;
-    var qPageUrl:String = shellQuote(pageUrl);
+    var outPath:String = detailFetchOutPath;
+    var donePath:String = detailFetchDonePath;
+    var errPath:String = detailFetchErrPath;
 
-    var cmd:String =
-        '(' +
-        '(command -v curl >/dev/null 2>&1 && curl -fsSL --compressed --max-time 35 -A ALEPsychModDownloader/1.4 ' + qUrl + ' -o ' + qOut + ' 2>' + qErr + ')' +
-        ' || ' +
-        '(command -v wget >/dev/null 2>&1 && wget -qO ' + qOut + ' --timeout=35 --user-agent=ALEPsychModDownloader/1.4 ' + qUrl + ' 2>' + qErr + ')' +
-        ' || ' +
-        '(command -v curl >/dev/null 2>&1 && curl -fsSL --compressed --max-time 35 -A ALEPsychModDownloader/1.4 ' + qPageUrl + ' -o ' + qOut + ' 2>>' + qErr + ')' +
-        ' || ' +
-        '(command -v wget >/dev/null 2>&1 && wget -qO ' + qOut + ' --timeout=35 --user-agent=ALEPsychModDownloader/1.4 ' + qPageUrl + ' 2>>' + qErr + ')' +
-        ') && echo OK > ' + qDone
-        + ' || echo FAIL > ' + qDone;
+    CoolUtil.createSafeThread(function()
+    {
+        var errParts:Array<String> = [];
+        var apiRes:Dynamic = httpGetTextRequest(url, 35, 'ALEPsychModDownloader/1.4', null);
+        if (apiRes.ok)
+        {
+            File.saveContent(outPath, Std.string(apiRes.data));
+            File.saveContent(donePath, 'OK');
+            return;
+        }
 
-    var proc:Process = null;
-    try
-    {
-        proc = new Process('sh', ['-c', 'nohup sh -c ' + shellQuote(cmd) + ' >/dev/null 2>&1 &']);
-        proc.close();
-        detailFetchActive = true;
-        return true;
-    }
-    catch (e:Dynamic)
-    {
-        if (proc != null)
-            proc.close();
-        detailFetchActive = false;
-        return false;
-    }
+        var apiErr:String = trimError(Std.string(apiRes.err));
+        if (apiErr.length > 0)
+            errParts.push('api: ' + apiErr);
+
+        var htmlRes:Dynamic = httpGetTextRequest(pageUrl, 35, 'ALEPsychModDownloader/1.4', null);
+        if (htmlRes.ok)
+        {
+            File.saveContent(outPath, Std.string(htmlRes.data));
+            File.saveContent(donePath, 'OK');
+            return;
+        }
+
+        var htmlErr:String = trimError(Std.string(htmlRes.err));
+        if (htmlErr.length > 0)
+            errParts.push('html: ' + htmlErr);
+
+        if (errParts.length > 0)
+            File.saveContent(errPath, errParts.join(' | '));
+        File.saveContent(donePath, 'FAIL');
+    });
+
+    detailFetchActive = true;
+    return true;
 }
 
 function pollDetailFetch()
@@ -1281,31 +1278,21 @@ function startBackgroundThumbDownload(id:String, url:String, outPath:String)
     if (FileSystem.exists(thumbDownloadDonePath)) FileSystem.deleteFile(thumbDownloadDonePath);
     if (FileSystem.exists(thumbDownloadErrPath)) FileSystem.deleteFile(thumbDownloadErrPath);
 
-    var qUrl:String = shellQuote(url);
-    var qOut:String = shellQuote(outPath);
-    var qDone:String = shellQuote(thumbDownloadDonePath);
-    var qErr:String = shellQuote(thumbDownloadErrPath);
+    var requestUrl:String = url;
+    var filePath:String = outPath;
+    var donePath:String = thumbDownloadDonePath;
+    var errPath:String = thumbDownloadErrPath;
 
-    var cmd:String =
-        '(command -v curl >/dev/null 2>&1 && '
-        + 'curl -fL --max-time 40 -A ALEPsychModDownloader/1.3 -e https://gamebanana.com/ -o ' + qOut + ' ' + qUrl + ' 2>' + qErr
-        + ' || wget -q --timeout=40 --user-agent=ALEPsychModDownloader/1.3 --referer=https://gamebanana.com/ -O ' + qOut + ' ' + qUrl + ' 2>' + qErr + ')'
-        + ' && echo OK > ' + qDone
-        + ' || echo FAIL > ' + qDone;
+    CoolUtil.createSafeThread(function()
+    {
+        var res:Dynamic = httpDownloadToFileRequest(requestUrl, filePath, 40, 'ALEPsychModDownloader/1.3', 'https://gamebanana.com/');
+        if (!res.ok && Std.string(res.err).length > 0)
+            File.saveContent(errPath, Std.string(res.err));
 
-    var proc:Process = null;
-    try
-    {
-        proc = new Process('sh', ['-c', 'nohup sh -c ' + shellQuote(cmd) + ' >/dev/null 2>&1 &']);
-        proc.close();
-        thumbDownloadActive = true;
-    }
-    catch (e:Dynamic)
-    {
-        if (proc != null)
-            proc.close();
-        thumbDownloadActive = false;
-    }
+        File.saveContent(donePath, res.ok ? 'OK' : 'FAIL');
+    });
+
+    thumbDownloadActive = true;
 }
 
 function guessFileExt(url:String):String
@@ -1628,33 +1615,26 @@ function startBackgroundDownload(url:String, zipPath:String):Bool
     if (FileSystem.exists(bgDownloadErrPath)) FileSystem.deleteFile(bgDownloadErrPath);
     if (FileSystem.exists(bgDownloadZipPath)) FileSystem.deleteFile(bgDownloadZipPath);
 
-    var qUrl:String = shellQuote(bgDownloadUrl);
-    var qPart:String = shellQuote(bgDownloadPartPath);
-    var qZip:String = shellQuote(bgDownloadZipPath);
-    var qDone:String = shellQuote(bgDownloadDonePath);
-    var qErr:String = shellQuote(bgDownloadErrPath);
+    var requestUrl:String = bgDownloadUrl;
+    var partPath:String = bgDownloadPartPath;
+    var zipOutPath:String = bgDownloadZipPath;
+    var donePath:String = bgDownloadDonePath;
+    var errPath:String = bgDownloadErrPath;
 
-    var cmd:String =
-        '(command -v curl >/dev/null 2>&1 && '
-        + 'curl -fL --retry 2 --max-time 180 -A ALEPsychModDownloader/1.2 -o ' + qPart + ' ' + qUrl + ' 2>' + qErr
-        + ' || wget -q --tries=2 --timeout=180 --user-agent=ALEPsychModDownloader/1.2 -O ' + qPart + ' ' + qUrl + ' 2>' + qErr + ')'
-        + ' && mv ' + qPart + ' ' + qZip
-        + ' && echo OK > ' + qDone
-        + ' || echo FAIL > ' + qDone;
+    CoolUtil.createSafeThread(function()
+    {
+        var res:Dynamic = httpDownloadToFileRequest(requestUrl, partPath, 180, 'ALEPsychModDownloader/1.2', 'https://gamebanana.com/');
+        var ok:Bool = res.ok;
+        var errText:String = trimError(Std.string(res.err));
 
-    var proc:Process = null;
-    try
-    {
-        proc = new Process('sh', ['-c', 'nohup sh -c ' + shellQuote(cmd) + ' >/dev/null 2>&1 &']);
-        proc.close();
-    }
-    catch (e:Dynamic)
-    {
-        if (proc != null)
-            proc.close();
-        lastNetworkError = trimError(Std.string(e));
-        return false;
-    }
+        if (ok)
+            ok = moveFile(partPath, zipOutPath);
+
+        if (!ok && errText.length > 0)
+            File.saveContent(errPath, errText);
+
+        File.saveContent(donePath, ok ? 'OK' : 'FAIL');
+    });
 
     bgDownloadActive = true;
     return true;
@@ -2070,15 +2050,11 @@ function networkGetText(url:String):String
 {
     lastNetworkError = '';
 
-    var curlRes:Dynamic = execProcess('curl', ['-fsSL', '--compressed', '--max-time', '30', '-A', 'ALEPsychModDownloader/1.1', url]);
-    if (curlRes.ok)
-        return Std.string(curlRes.out);
+    var res:Dynamic = httpGetTextRequest(url, 30, 'ALEPsychModDownloader/1.1', null);
+    if (res.ok)
+        return Std.string(res.data);
 
-    var wgetRes:Dynamic = execProcess('wget', ['-qO-', '--timeout=30', '--user-agent=ALEPsychModDownloader/1.1', url]);
-    if (wgetRes.ok)
-        return Std.string(wgetRes.out);
-
-    lastNetworkError = trimError('curl: ' + Std.string(curlRes.err) + ' | wget: ' + Std.string(wgetRes.err));
+    lastNetworkError = trimError(Std.string(res.err));
     return '';
 }
 
@@ -2086,16 +2062,130 @@ function networkDownloadFile(url:String, outPath:String):Bool
 {
     lastNetworkError = '';
 
-    var curlRes:Dynamic = execProcess('curl', ['-fL', '--retry', '2', '--max-time', '180', '-A', 'ALEPsychModDownloader/1.1', '-e', 'https://gamebanana.com/', '-o', outPath, url]);
-    if (curlRes.ok && FileSystem.exists(outPath))
+    var res:Dynamic = httpDownloadToFileRequest(url, outPath, 180, 'ALEPsychModDownloader/1.1', 'https://gamebanana.com/');
+    if (res.ok)
         return true;
 
-    var wgetRes:Dynamic = execProcess('wget', ['-q', '--tries=2', '--timeout=180', '--user-agent=ALEPsychModDownloader/1.1', '--referer=https://gamebanana.com/', '-O', outPath, url]);
-    if (wgetRes.ok && FileSystem.exists(outPath))
-        return true;
-
-    lastNetworkError = trimError('curl: ' + Std.string(curlRes.err) + ' | wget: ' + Std.string(wgetRes.err));
+    lastNetworkError = trimError(Std.string(res.err));
     return false;
+}
+
+function httpGetTextRequest(url:String, timeoutSeconds:Int, userAgent:String, referer:String):Dynamic
+{
+    var data:String = '';
+    var err:String = '';
+    var req:Http = null;
+
+    try
+    {
+        req = new Http(url);
+        req.cnxTimeout = timeoutSeconds;
+        req.setHeader('User-Agent', userAgent);
+        req.setHeader('Accept', '*/*');
+        if (referer != null && referer.length > 0)
+            req.setHeader('Referer', referer);
+
+        req.onData = function(text:String)
+        {
+            data = text;
+        };
+
+        req.onError = function(message:String)
+        {
+            err = message;
+        };
+
+        req.request(false);
+    }
+    catch (e:Dynamic)
+    {
+        err = Std.string(e);
+    }
+
+    if (err.length == 0 && data != null && data.length > 0)
+    {
+        return {
+            ok: true,
+            data: data,
+            err: ''
+        };
+    }
+
+    var fallback:String = err;
+    if (fallback == null || fallback.length == 0)
+        fallback = 'Empty response';
+
+    return {
+        ok: false,
+        data: '',
+        err: fallback
+    };
+}
+
+function httpDownloadToFileRequest(url:String, outPath:String, timeoutSeconds:Int, userAgent:String, referer:String):Dynamic
+{
+    var bytes:Bytes = null;
+    var err:String = '';
+    var req:Http = null;
+
+    try
+    {
+        req = new Http(url);
+        req.cnxTimeout = timeoutSeconds;
+        req.setHeader('User-Agent', userAgent);
+        req.setHeader('Accept', '*/*');
+        if (referer != null && referer.length > 0)
+            req.setHeader('Referer', referer);
+
+        req.onBytes = function(value:Bytes)
+        {
+            bytes = value;
+        };
+
+        req.onData = function(text:String)
+        {
+            bytes = Bytes.ofString(text);
+        };
+
+        req.onError = function(message:String)
+        {
+            err = message;
+        };
+
+        req.request(false);
+    }
+    catch (e:Dynamic)
+    {
+        err = Std.string(e);
+    }
+
+    if (err.length == 0 && bytes != null && bytes.length > 0)
+    {
+        try
+        {
+            var parent:String = directoryOf(outPath);
+            if (parent.length > 0)
+                ensureDir(parent);
+
+            File.saveBytes(outPath, bytes);
+            return {
+                ok: true,
+                err: ''
+            };
+        }
+        catch (e:Dynamic)
+        {
+            err = Std.string(e);
+        }
+    }
+
+    if (err == null || err.length == 0)
+        err = 'Empty response';
+
+    return {
+        ok: false,
+        err: err
+    };
 }
 
 function execProcess(cmd:String, args:Array<String>):Dynamic
@@ -2132,8 +2222,111 @@ function execProcess(cmd:String, args:Array<String>):Dynamic
 
 function unzipTo(zipPath:String, outDir:String):Bool
 {
+    if (unzipToPureHaxe(zipPath, outDir))
+        return true;
+
     var res:Dynamic = execProcess('unzip', ['-qq', '-o', zipPath, '-d', outDir]);
     return res.ok;
+}
+
+function unzipToPureHaxe(zipPath:String, outDir:String):Bool
+{
+    var input:sys.io.FileInput = null;
+    try
+    {
+        ensureDir(outDir);
+
+        input = File.read(zipPath, true);
+        var entries = Reader.readZip(input);
+        input.close();
+        input = null;
+
+        for (entry in entries)
+        {
+            var relativePath:String = sanitizeZipEntryPath(entry.fileName);
+            if (relativePath.length == 0)
+                continue;
+
+            var outputPath:String = joinPath([outDir, relativePath]);
+            var entryName:String = normalizePath(entry.fileName);
+            var isDirectory:Bool = entryName.endsWith('/');
+            if (isDirectory)
+            {
+                ensureDir(outputPath);
+                continue;
+            }
+
+            var parent:String = directoryOf(outputPath);
+            if (parent.length > 0)
+                ensureDir(parent);
+
+            if (entry.compressed)
+                Reader.unzip(entry);
+
+            File.saveBytes(outputPath, entry.data);
+        }
+
+        return true;
+    }
+    catch (e:Dynamic)
+    {
+        if (input != null)
+        {
+            try
+            {
+                input.close();
+            }
+            catch (ignored:Dynamic) {}
+        }
+        return false;
+    }
+}
+
+function sanitizeZipEntryPath(path:String):String
+{
+    if (path == null || path.length == 0)
+        return '';
+
+    var p:String = normalizePath(path).trim();
+    while (p.startsWith('/'))
+        p = p.substring(1);
+    while (p.startsWith('./'))
+        p = p.substring(2);
+
+    if (p.length == 0)
+        return '';
+    if (p.contains('../') || p.startsWith('..'))
+        return '';
+    if (p.length >= 2 && p.charAt(1) == ':')
+        return '';
+
+    return p;
+}
+
+function moveFile(fromPath:String, toPath:String):Bool
+{
+    try
+    {
+        if (FileSystem.exists(toPath))
+            FileSystem.deleteFile(toPath);
+
+        FileSystem.rename(fromPath, toPath);
+        return true;
+    }
+    catch (e:Dynamic)
+    {
+        try
+        {
+            var bytes = File.getBytes(fromPath);
+            File.saveBytes(toPath, bytes);
+            FileSystem.deleteFile(fromPath);
+            return true;
+        }
+        catch (copyErr:Dynamic)
+        {
+            return false;
+        }
+    }
 }
 
 function extractNestedZips(root:String, depth:Int)

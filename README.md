@@ -46,6 +46,15 @@ This mod adds an in-game browser so players can search, preview, and install ALE
 - Rejects legacy/non-ALE layouts by default (configurable in `data.json`).
 - Detects nested ZIPs and tries to pick the best mod root automatically.
 
+## Platform Compatibility
+
+- Android: supported.
+- Windows: supported.
+- macOS: supported.
+- Linux: supported.
+
+The downloader now uses built-in HTTP and ZIP handling, so it does not require platform shell commands to fetch and extract mods.
+
 ## For Modders/Developers
 
 ### Project layout
@@ -84,15 +93,13 @@ This mod adds an in-game browser so players can search, preview, and install ALE
 
 ### External tools used at runtime
 
-- Network: `curl` (preferred) or `wget` (fallback)
-- Extraction: `unzip`
-
-If these are missing on the system, downloading/installing can fail.
+- None required for normal operation.
+- Optional fallback: if built-in ZIP extraction fails for a specific archive, the downloader may try `unzip` when available.
 
 ## Troubleshooting
 
 - **No mods shown**: check internet connection and GameBanana availability.
-- **Download failed**: verify `curl`/`wget` and `unzip` are available.
+- **Download failed**: check internet access and that the game can reach GameBanana.
 - **Mod rejected as non-ALE**: set `allowLegacyPsychMods` to `true` (or disable strict mode) if you intentionally want legacy formats.
 - **Preview images missing**: this is usually temporary network/cache behavior; reload with `R`.
 

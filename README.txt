@@ -12,6 +12,8 @@ Notes:
 - This downloader currently prefers ZIP files.
 - It tries to detect nested ZIP files and extract the best match.
 - It creates pack.json automatically if missing.
+- Platform support: Android, Windows, macOS, Linux.
+- No external tools are required for normal download/extract flow.
 
 Developer config:
 - Edit mods/moddownloader/data.json to tweak strict ALE detection and cache cleanup behavior.
