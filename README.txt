@@ -1,5 +1,9 @@
 GameBanana Mod Downloader (ALE Psych mod)
 
+NOTE:
+- Compatible on Android, Windows, macOS, and Linux.
+- Uses built-in HTTP + ZIP handling (no curl/wget required).
+
 How to use:
 1) Select this mod in the ALE Psych Mods menu.
 2) Go to Main Menu and press M.

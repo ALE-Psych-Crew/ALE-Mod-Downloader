@@ -1,7 +1,8 @@
 # ALE Psych Mod Downloader
 
 > [!NOTE]
-> ONLY COMPATIBLE WITH LINUX RN, ADDING COMPAT WITH WINDOWS/ANDROID AND MAC LATER
+> Compatible on Android, Windows, macOS, and Linux.
+> This mod now uses built-in HTTP + ZIP handling, so `curl`/`wget` are not required.
 
 GameBanana mod downloader for **ALE Psych**.
 
@@ -94,7 +95,7 @@ The downloader now uses built-in HTTP and ZIP handling, so it does not require p
 ### External tools used at runtime
 
 - None required for normal operation.
-- Optional fallback: if built-in ZIP extraction fails for a specific archive, the downloader may try `unzip` when available.
+- Optional fallback: if built-in ZIP extraction fails for a specific archive, the downloader can try `unzip` when available.
 
 ## Troubleshooting
 
