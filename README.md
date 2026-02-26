@@ -1,5 +1,8 @@
 # ALE Psych Mod Downloader
 
+> [!NOTE]
+> ONLY COMPATIBLE WITH LINUX RN, ADDING COMPAT WITH WINDOWS/ANDROID AND MAC LATER
+
 GameBanana mod downloader for **ALE Psych**.
 
 This mod adds an in-game browser so players can search, preview, and install ALE Psych mods directly from the main menu.
