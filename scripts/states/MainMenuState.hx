@@ -198,16 +198,19 @@ function onDestroy()
     CoolUtil.save.custom.data.mainMenuSelection = selInt;
 }
 
-MobileAPI.createButtons(FlxG.width - 300, FlxG.height - 200, [
+var mobileScale:Float = Math.min(FlxG.width / 1280, FlxG.height / 720);
+var mobileRadius:Int = Std.int(80 * mobileScale);
+
+MobileAPI.createButtons(FlxG.width - (300 * mobileScale), FlxG.height - (200 * mobileScale), [
     {label: 'A', keys: ClientPrefs.controls.ui.accept},
     {label: 'B', keys: ClientPrefs.controls.ui.back},
-]);
+], mobileRadius);
 
-MobileAPI.createButtons(FlxG.width - 170, FlxG.height - 330, [
+MobileAPI.createButtons(FlxG.width - (170 * mobileScale), FlxG.height - (330 * mobileScale), [
     {label: 'M', keys: [FlxKey.M]},
-]);
+], Std.int(68 * mobileScale));
 
-MobileAPI.createButtons(100, FlxG.height - 200, [
+MobileAPI.createButtons(100 * mobileScale, FlxG.height - (200 * mobileScale), [
     {label: 'D', keys: ClientPrefs.controls.ui.down},
     {label: 'U', keys: ClientPrefs.controls.ui.up},
-]);
+], mobileRadius);

@@ -41,6 +41,7 @@ This mod adds an in-game browser so players can search, preview, and install ALE
   - `B` = back/close
   - `L/U/R/D` = page/selection navigation
   - `T` = search mode, `R` = reload, `C` = category page
+- Button layout is tuned for the engine's 1280x720 (16:9) landscape baseline and scales with resolution.
 - Touching thumbnails and detail buttons also works.
 
 ### Install result

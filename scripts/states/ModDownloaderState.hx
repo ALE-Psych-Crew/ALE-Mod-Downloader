@@ -529,28 +529,41 @@ function setupMobileButtons()
     if (!CoolVars.mobile)
         return;
 
+    var mobileScale:Float = Math.min(FlxG.width / 1280, FlxG.height / 720);
+    var clusterRadius:Int = Std.int(70 * mobileScale);
+    var actionRadius:Int = Std.int(58 * mobileScale);
+
     MobileAPI.destroyButtons(false);
 
-    MobileAPI.createButtons(FlxG.width - 110, FlxG.height - 110, [
+    MobileAPI.createButtons(FlxG.width - (120 * mobileScale), FlxG.height - (110 * mobileScale), [
         {label: 'A', keys: ClientPrefs.controls.ui.accept}
-    ], null, false);
+    ], actionRadius, false);
 
-    MobileAPI.createButtons(110, FlxG.height - 110, [
+    MobileAPI.createButtons(FlxG.width - (270 * mobileScale), FlxG.height - (110 * mobileScale), [
         {label: 'B', keys: ClientPrefs.controls.ui.back}
-    ], null, false);
+    ], actionRadius, false);
 
-    MobileAPI.createButtons(110, FlxG.height - 260, [
-        {label: 'L', keys: ClientPrefs.controls.ui.left},
+    MobileAPI.createButtons(100 * mobileScale, FlxG.height - (200 * mobileScale), [
         {label: 'U', keys: ClientPrefs.controls.ui.up},
-        {label: 'R', keys: ClientPrefs.controls.ui.right},
         {label: 'D', keys: ClientPrefs.controls.ui.down}
-    ], 88, false);
+    ], clusterRadius, false);
 
-    MobileAPI.createButtons(FlxG.width - 290, FlxG.height - 200, [
+    MobileAPI.createButtons(100 * mobileScale, FlxG.height - (95 * mobileScale), [
+        {label: 'L', keys: ClientPrefs.controls.ui.left},
+        {label: 'R', keys: ClientPrefs.controls.ui.right}
+    ], clusterRadius, false);
+
+    MobileAPI.createButtons(FlxG.width - (110 * mobileScale), FlxG.height - (250 * mobileScale), [
         {label: 'T', keys: [flixel.input.keyboard.FlxKey.T]},
+    ], actionRadius, false);
+
+    MobileAPI.createButtons(FlxG.width - (240 * mobileScale), FlxG.height - (250 * mobileScale), [
         {label: 'R', keys: [flixel.input.keyboard.FlxKey.R]},
+    ], actionRadius, false);
+
+    MobileAPI.createButtons(FlxG.width - (370 * mobileScale), FlxG.height - (250 * mobileScale), [
         {label: 'C', keys: [flixel.input.keyboard.FlxKey.C]}
-    ], 74, false);
+    ], actionRadius, false);
 }
 
 function isSearchActionPressed():Bool

@@ -10,6 +10,7 @@ Android/mobile controls:
 - L/U/R/D = navigation
 - T = search mode, R = reload, C = category page
 - Touch on thumbnails/buttons is supported
+- Layout is tuned for 1280x720 (16:9) landscape and scales with resolution
 
 How to use:
 1) Select this mod in the ALE Psych Mods menu.
