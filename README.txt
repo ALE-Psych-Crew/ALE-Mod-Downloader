@@ -28,4 +28,4 @@ Notes:
 - No external tools are required for normal download/extract flow.
 
 Developer config:
-- Edit mods/moddownloader/data.json to tweak strict ALE detection and cache cleanup behavior.
+- Edit <your mod folder>/data.json to tweak strict ALE detection and cache cleanup behavior.

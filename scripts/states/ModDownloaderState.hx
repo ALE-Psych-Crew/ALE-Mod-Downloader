@@ -1,8 +1,5 @@
 import flixel.text.FlxText.FlxTextBorderStyle;
 import api.MobileAPI;
-import haxe.Http;
-import haxe.io.Bytes;
-import haxe.zip.Reader;
 
 using StringTools;
 
@@ -121,15 +118,32 @@ var thumbDownloadId:String = '';
 var backspaceHeld:Bool = false;
 
 var listFetchActive:Bool = false;
+var listFetchUrl:String = '';
 var listFetchOutPath:String = '';
 var listFetchDonePath:String = '';
 var listFetchErrPath:String = '';
+var listFetchResultText:String = '';
+var listFetchRunning:Bool = false;
 
 var detailFetchActive:Bool = false;
+var detailFetchApiUrl:String = '';
+var detailFetchPageUrl:String = '';
 var detailFetchOutPath:String = '';
 var detailFetchDonePath:String = '';
 var detailFetchErrPath:String = '';
 var detailFetchModId:Int = -1;
+var detailFetchApiText:String = '';
+var detailFetchHtmlText:String = '';
+var detailFetchRunning:Bool = false;
+
+var thumbDownloadUrl:String = '';
+var thumbDownloadRunning:Bool = false;
+var netTextUrl:String = '';
+var netDownloadUrl:String = '';
+var netDownloadOutPath:String = '';
+var netCurlRes:Dynamic = null;
+var netWgetRes:Dynamic = null;
+var bgDownloadRunning:Bool = false;
 
 var config:Dynamic = {
     developerMode: true,
@@ -290,8 +304,6 @@ btnCloseText.borderSize = 1;
 btnCloseText.visible = false;
 add(btnCloseText);
 
-setupMobileButtons();
-
 function onUpdate(elapsed:Float)
 {
     if (pendingInitialLoad)
@@ -310,7 +322,7 @@ function onUpdate(elapsed:Float)
 
     if (typingSearch)
     {
-        if (Controls.ACCEPT || FlxG.keys.justPressed.ENTER)
+        if (FlxG.keys.justPressed.ENTER || (Controls.ACCEPT && !FlxG.keys.justPressed.SPACE))
         {
             typingSearch = false;
             backspaceHeld = false;
@@ -326,6 +338,19 @@ function onUpdate(elapsed:Float)
             typingSearch = false;
             backspaceHeld = false;
             setStatus('Search edit canceled.', FlxColor.YELLOW);
+            refreshHeader();
+            return;
+        }
+
+        if (Controls.anyJustPressed([flixel.input.keyboard.FlxKey.SPACE]))
+        {
+            pushTypedChar(' ');
+            return;
+        }
+
+        if (Controls.anyJustPressed([flixel.input.keyboard.FlxKey.BACKSPACE]) && query.length > 0)
+        {
+            query = query.substring(0, query.length - 1);
             refreshHeader();
             return;
         }
@@ -564,6 +589,14 @@ function setupMobileButtons()
     MobileAPI.createButtons(FlxG.width - (370 * mobileScale), FlxG.height - (250 * mobileScale), [
         {label: 'C', keys: [flixel.input.keyboard.FlxKey.C]}
     ], actionRadius, false);
+
+    MobileAPI.createButtons(FlxG.width - (500 * mobileScale), FlxG.height - (250 * mobileScale), [
+        {label: 'SP', keys: [flixel.input.keyboard.FlxKey.SPACE]}
+    ], actionRadius, false);
+
+    MobileAPI.createButtons(FlxG.width - (630 * mobileScale), FlxG.height - (250 * mobileScale), [
+        {label: 'BS', keys: [flixel.input.keyboard.FlxKey.BACKSPACE]}
+    ], actionRadius, false);
 }
 
 function isSearchActionPressed():Bool
@@ -583,7 +616,7 @@ function isCategoryActionPressed():Bool
 
 function loadConfig()
 {
-    var path:String = joinPath([Paths.mods, 'moddownloader', 'data.json']);
+    var path:String = joinPath([getDownloaderRoot(), 'data.json']);
     if (!FileSystem.exists(path))
         return;
 
@@ -593,7 +626,7 @@ function loadConfig()
         if (parsed != null)
             config = parsed;
     }
-    catch (e:Dynamic)
+    catch (_:Dynamic)
     {
         setStatus('Config parse failed, using defaults.', FlxColor.YELLOW);
     }
@@ -606,10 +639,10 @@ function refreshHeader()
     pageText.text = 'Page ' + page + '  [' + mods.length + ' loaded]';
 }
 
-function setStatus(text:String, ?color:FlxColor)
+function setStatus(text:String, color:FlxColor)
 {
     statusText.text = text;
-    statusText.color = color == null ? FlxColor.CYAN : color;
+    statusText.color = color;
 }
 
 function loadModList()
@@ -638,12 +671,13 @@ function loadModList()
             + '&_aFilters[Generic_Category]=' + CATEGORY_ID;
     }
 
-    if (!startBackgroundListFetch(url))
+    listFetchUrl = url;
+    if (!startBackgroundListFetch())
     {
         mods = [];
         redrawGrid();
         loadingList = false;
-        var details:String = lastNetworkError.length > 0 ? (' | ' + lastNetworkError) : '';
+        var details:String = hasNetworkError() ? (' | ' + lastNetworkError) : '';
         setStatus('Failed to start list request.' + details, FlxColor.RED);
         return;
     }
@@ -651,7 +685,7 @@ function loadModList()
     setStatus('Loading mods... (network)', FlxColor.CYAN);
 }
 
-function startBackgroundListFetch(url:String):Bool
+function startBackgroundListFetch():Bool
 {
     lastNetworkError = '';
 
@@ -667,24 +701,35 @@ function startBackgroundListFetch(url:String):Bool
     if (FileSystem.exists(listFetchDonePath)) FileSystem.deleteFile(listFetchDonePath);
     if (FileSystem.exists(listFetchErrPath)) FileSystem.deleteFile(listFetchErrPath);
 
-    var requestUrl:String = url;
-    var outPath:String = listFetchOutPath;
-    var donePath:String = listFetchDonePath;
-    var errPath:String = listFetchErrPath;
-
-    CoolUtil.createSafeThread(function()
-    {
-        var res:Dynamic = httpGetTextRequest(requestUrl, 35, 'ALEPsychModDownloader/1.4', null);
-        if (res.ok)
-            File.saveContent(outPath, Std.string(res.data));
-        else if (Std.string(res.err).length > 0)
-            File.saveContent(errPath, Std.string(res.err));
-
-        File.saveContent(donePath, res.ok ? 'OK' : 'FAIL');
-    });
+    listFetchRunning = true;
+    runListFetchJob();
 
     listFetchActive = true;
     return true;
+}
+
+function runListFetchJob()
+{
+    if (!listFetchRunning)
+        return;
+
+    netTextUrl = listFetchUrl;
+    listFetchResultText = requestText();
+
+    if (listFetchResultText != null && listFetchResultText.length > 0)
+    {
+        File.saveContent(listFetchOutPath, listFetchResultText);
+        File.saveContent(listFetchDonePath, 'OK');
+    }
+    else
+    {
+        if (hasNetworkError())
+            File.saveContent(listFetchErrPath, lastNetworkError);
+
+        File.saveContent(listFetchDonePath, 'FAIL');
+    }
+
+    listFetchRunning = false;
 }
 
 function pollListFetch()
@@ -702,7 +747,7 @@ function pollListFetch()
     {
         doneState = File.getContent(listFetchDonePath).trim();
     }
-    catch (e:Dynamic) {}
+    catch (_:Dynamic) {}
 
     if (doneState != 'OK' || !FileSystem.exists(listFetchOutPath))
     {
@@ -713,7 +758,7 @@ function pollListFetch()
             {
                 err = trimError(File.getContent(listFetchErrPath));
             }
-            catch (e:Dynamic) {}
+            catch (_:Dynamic) {}
         }
 
         mods = [];
@@ -731,7 +776,7 @@ function pollListFetch()
     {
         jsonRaw = File.getContent(listFetchOutPath);
     }
-    catch (e:Dynamic) {}
+    catch (_:Dynamic) {}
     applyListJson(jsonRaw);
 
     if (FileSystem.exists(listFetchDonePath)) FileSystem.deleteFile(listFetchDonePath);
@@ -755,7 +800,7 @@ function applyListJson(jsonRaw:String)
     {
         data = Json.parse(jsonRaw);
     }
-    catch (e:Dynamic)
+    catch (_:Dynamic)
     {
         mods = [];
         redrawGrid();
@@ -829,46 +874,46 @@ function startBackgroundDetailFetch(modId:Int):Bool
     if (FileSystem.exists(detailFetchDonePath)) FileSystem.deleteFile(detailFetchDonePath);
     if (FileSystem.exists(detailFetchErrPath)) FileSystem.deleteFile(detailFetchErrPath);
 
-    var url:String = 'https://gamebanana.com/apiv11/Mod/' + modId + '/ProfilePage';
-    var pageUrl:String = 'https://gamebanana.com/mods/' + modId;
-    var outPath:String = detailFetchOutPath;
-    var donePath:String = detailFetchDonePath;
-    var errPath:String = detailFetchErrPath;
+    detailFetchApiUrl = 'https://gamebanana.com/apiv11/Mod/' + modId + '/ProfilePage';
+    detailFetchPageUrl = 'https://gamebanana.com/mods/' + modId;
 
-    CoolUtil.createSafeThread(function()
-    {
-        var errParts:Array<String> = [];
-        var apiRes:Dynamic = httpGetTextRequest(url, 35, 'ALEPsychModDownloader/1.4', null);
-        if (apiRes.ok)
-        {
-            File.saveContent(outPath, Std.string(apiRes.data));
-            File.saveContent(donePath, 'OK');
-            return;
-        }
-
-        var apiErr:String = trimError(Std.string(apiRes.err));
-        if (apiErr.length > 0)
-            errParts.push('api: ' + apiErr);
-
-        var htmlRes:Dynamic = httpGetTextRequest(pageUrl, 35, 'ALEPsychModDownloader/1.4', null);
-        if (htmlRes.ok)
-        {
-            File.saveContent(outPath, Std.string(htmlRes.data));
-            File.saveContent(donePath, 'OK');
-            return;
-        }
-
-        var htmlErr:String = trimError(Std.string(htmlRes.err));
-        if (htmlErr.length > 0)
-            errParts.push('html: ' + htmlErr);
-
-        if (errParts.length > 0)
-            File.saveContent(errPath, errParts.join(' | '));
-        File.saveContent(donePath, 'FAIL');
-    });
+    detailFetchRunning = true;
+    runDetailFetchJob();
 
     detailFetchActive = true;
     return true;
+}
+
+function runDetailFetchJob()
+{
+    if (!detailFetchRunning)
+        return;
+
+    netTextUrl = detailFetchApiUrl;
+    detailFetchApiText = requestText();
+    if (detailFetchApiText != null && detailFetchApiText.length > 0)
+    {
+        File.saveContent(detailFetchOutPath, detailFetchApiText);
+        File.saveContent(detailFetchDonePath, 'OK');
+        detailFetchRunning = false;
+        return;
+    }
+
+    netTextUrl = detailFetchPageUrl;
+    detailFetchHtmlText = requestText();
+    if (detailFetchHtmlText != null && detailFetchHtmlText.length > 0)
+    {
+        File.saveContent(detailFetchOutPath, detailFetchHtmlText);
+        File.saveContent(detailFetchDonePath, 'OK');
+        detailFetchRunning = false;
+        return;
+    }
+
+    if (hasNetworkError())
+        File.saveContent(detailFetchErrPath, trimError(lastNetworkError));
+
+    File.saveContent(detailFetchDonePath, 'FAIL');
+    detailFetchRunning = false;
 }
 
 function pollDetailFetch()
@@ -886,7 +931,7 @@ function pollDetailFetch()
     {
         doneState = File.getContent(detailFetchDonePath).trim();
     }
-    catch (e:Dynamic) {}
+    catch (_:Dynamic) {}
 
     if (doneState == 'OK' && FileSystem.exists(detailFetchOutPath))
     {
@@ -895,7 +940,7 @@ function pollDetailFetch()
         {
             jsonRaw = File.getContent(detailFetchOutPath);
         }
-        catch (e:Dynamic) {}
+        catch (_:Dynamic) {}
 
         applyDetailProfileJson(detailFetchModId, jsonRaw);
     }
@@ -911,8 +956,8 @@ function pollDetailFetch()
                 fallbackDesc = 'Description unavailable for this mod.';
 
             var submitter:String = detailMod._aSubmitter == null ? 'Unknown' : Std.string(detailMod._aSubmitter._sName);
-            var likes:Int = detailMod._nLikeCount == null ? 0 : Std.int(detailMod._nLikeCount);
-            var views:Int = detailMod._nViewCount == null ? 0 : Std.int(detailMod._nViewCount);
+            var likes = detailMod._nLikeCount == null ? 0 : Std.int(detailMod._nLikeCount);
+            var views = detailMod._nViewCount == null ? 0 : Std.int(detailMod._nViewCount);
 
             detailDesc.text =
                 'By ' + submitter + '\n'
@@ -939,7 +984,7 @@ function applyDetailProfileJson(modId:Int, jsonRaw:String)
         data = Json.parse(jsonRaw);
         record = extractDetailRecord(data);
     }
-    catch (e:Dynamic)
+    catch (_:Dynamic)
     {
         record = extractDetailFromHtml(jsonRaw);
     }
@@ -1030,7 +1075,7 @@ function extractMetaFlexible(html:String, attr:String, value:String):String
     if (rx2.match(html))
         return sanitizeApiText(rx2.matched(1));
 
-    var rx3:EReg = new EReg('<meta[^>]*' + a + '=["\']' + v + '["\'][^>]*content=([^\s>]+)', 'i');
+    var rx3:EReg = new EReg('<meta[^>]*' + a + '=["\']' + v + '["\'][^>]*content=([^ >]+)', 'i');
     if (rx3.match(html))
         return sanitizeApiText(rx3.matched(1));
 
@@ -1101,7 +1146,7 @@ function redrawGrid()
         labelBG.alpha = isSelected ? 0.68 : 0.5;
 
         var name:String = Std.string(mod._sName);
-        var likes:Int = mod._nLikeCount == null ? 0 : Std.int(mod._nLikeCount);
+        var likes = mod._nLikeCount == null ? 0 : Std.int(mod._nLikeCount);
         label.text = trimText(name, 42) + '\nLikes: ' + likes;
 
         var thumbPath:String = ensureThumbnail(mod, false);
@@ -1312,13 +1357,16 @@ function pollThumbnailDownloads()
         thumbQueue = [];
         thumbQueueReadIndex = 0;
     }
-    var outPath:String = Std.string(item.outPath);
-    var url:String = Std.string(item.url);
+    var outPath = Std.string(Reflect.field(item, 'outPath'));
+    var itemUrl = Std.string(Reflect.field(item, 'url'));
 
     if (FileSystem.exists(outPath))
         return;
 
-    startBackgroundThumbDownload(Std.string(item.id), url, outPath);
+    thumbDownloadId = Std.string(Reflect.field(item, 'id'));
+    thumbDownloadOutPath = outPath;
+    thumbDownloadUrl = itemUrl;
+    startBackgroundThumbDownload();
 }
 
 function enqueueThumb(item:Dynamic)
@@ -1328,42 +1376,51 @@ function enqueueThumb(item:Dynamic)
     thumbQueue[thumbQueue.length] = item;
 }
 
-function startBackgroundThumbDownload(id:String, url:String, outPath:String)
+function startBackgroundThumbDownload()
 {
     var tmpRoot:String = joinPath([getDownloaderTmpRoot(), 'thumbjobs']);
     ensureDir(tmpRoot);
 
-    thumbDownloadOutPath = outPath;
-    thumbDownloadDonePath = outPath + '.done';
-    thumbDownloadErrPath = outPath + '.err';
-    thumbDownloadId = id;
+    thumbDownloadDonePath = thumbDownloadOutPath + '.done';
+    thumbDownloadErrPath = thumbDownloadOutPath + '.err';
 
     if (FileSystem.exists(thumbDownloadDonePath)) FileSystem.deleteFile(thumbDownloadDonePath);
     if (FileSystem.exists(thumbDownloadErrPath)) FileSystem.deleteFile(thumbDownloadErrPath);
 
-    var requestUrl:String = url;
-    var filePath:String = outPath;
-    var donePath:String = thumbDownloadDonePath;
-    var errPath:String = thumbDownloadErrPath;
-
-    CoolUtil.createSafeThread(function()
-    {
-        var res:Dynamic = httpDownloadToFileRequest(requestUrl, filePath, 40, 'ALEPsychModDownloader/1.3', 'https://gamebanana.com/');
-        if (!res.ok && Std.string(res.err).length > 0)
-            File.saveContent(errPath, Std.string(res.err));
-
-        File.saveContent(donePath, res.ok ? 'OK' : 'FAIL');
-    });
+    thumbDownloadRunning = true;
+    runThumbDownloadJob();
 
     thumbDownloadActive = true;
 }
 
-function guessFileExt(url:String):String
+function runThumbDownloadJob()
 {
-    if (url == null || url.length == 0)
+    if (!thumbDownloadRunning)
+        return;
+
+    netDownloadUrl = thumbDownloadUrl;
+    netDownloadOutPath = thumbDownloadOutPath;
+    if (requestDownload())
+    {
+        File.saveContent(thumbDownloadDonePath, 'OK');
+    }
+    else
+    {
+        if (hasNetworkError())
+            File.saveContent(thumbDownloadErrPath, lastNetworkError);
+
+        File.saveContent(thumbDownloadDonePath, 'FAIL');
+    }
+
+    thumbDownloadRunning = false;
+}
+
+function guessFileExt(imageUrl:String):String
+{
+    if (imageUrl == null || imageUrl.length == 0)
         return 'jpg';
 
-    var clean:String = url;
+    var clean:String = imageUrl;
     var q:Int = clean.indexOf('?');
     if (q >= 0)
         clean = clean.substring(0, q);
@@ -1439,8 +1496,8 @@ function openDetail(mod:Dynamic)
     setDetailVisible(true);
 
     var name:String = Std.string(mod._sName);
-    var likes:Int = mod._nLikeCount == null ? 0 : Std.int(mod._nLikeCount);
-    var views:Int = mod._nViewCount == null ? 0 : Std.int(mod._nViewCount);
+    var likes = mod._nLikeCount == null ? 0 : Std.int(mod._nLikeCount);
+    var views = mod._nViewCount == null ? 0 : Std.int(mod._nViewCount);
     var submitter:String = mod._aSubmitter == null ? 'Unknown' : Std.string(mod._aSubmitter._sName);
     var subline:String = readModSubline(mod);
     var description:String = readModDescription(mod);
@@ -1597,7 +1654,8 @@ function downloadMod(mod:Dynamic)
     var profileUrl:String = Std.string(mod._sProfileUrl);
 
     setStatus('Step 1/5: Fetching download options...', FlxColor.CYAN);
-    var dlRaw:String = networkGetText('https://gamebanana.com/apiv11/Mod/' + modId + '/DownloadPage');
+    netTextUrl = 'https://gamebanana.com/apiv11/Mod/' + modId + '/DownloadPage';
+    var dlRaw:String = requestText();
     if (dlRaw == null || dlRaw.length == 0)
     {
         downloading = false;
@@ -1610,7 +1668,7 @@ function downloadMod(mod:Dynamic)
     {
         dlData = Json.parse(dlRaw);
     }
-    catch (e:Dynamic)
+    catch (_:Dynamic)
     {
         downloading = false;
         setStatus('Download API parse failed.', FlxColor.RED);
@@ -1634,10 +1692,11 @@ function downloadMod(mod:Dynamic)
     }
 
     var fileId:Int = Std.int(best._idRow);
-    var downloadUrl:String = Std.string(best._sDownloadUrl);
+    var downloadUrl = Std.string(best._sDownloadUrl);
 
     setStatus('Step 2/5: Inspecting file list...', FlxColor.CYAN);
-    var rawList:String = networkGetText('https://gamebanana.com/apiv11/File/' + fileId + '/RawFileList');
+    netTextUrl = 'https://gamebanana.com/apiv11/File/' + fileId + '/RawFileList';
+    var rawList:String = requestText();
     if (!isLikelyAleFromRawList(rawList))
     {
         downloading = false;
@@ -1653,7 +1712,8 @@ function downloadMod(mod:Dynamic)
     bgDownloadProfileUrl = profileUrl;
     bgDownloadRemoteName = Std.string(best._sFile);
 
-    if (!startBackgroundDownload(downloadUrl, zipPath))
+    bgDownloadUrl = downloadUrl;
+    if (!startBackgroundDownload(zipPath))
     {
         downloading = false;
         setStatus('Download start failed. ' + lastNetworkError, FlxColor.RED);
@@ -1663,11 +1723,10 @@ function downloadMod(mod:Dynamic)
     setStatus('Step 3/5: Downloading archive... 0 B', FlxColor.CYAN);
 }
 
-function startBackgroundDownload(url:String, zipPath:String):Bool
+function startBackgroundDownload(zipPath):Bool
 {
     lastNetworkError = '';
 
-    bgDownloadUrl = url;
     bgDownloadZipPath = zipPath;
     bgDownloadPartPath = zipPath + '.part';
     bgDownloadDonePath = zipPath + '.done';
@@ -1678,29 +1737,41 @@ function startBackgroundDownload(url:String, zipPath:String):Bool
     if (FileSystem.exists(bgDownloadErrPath)) FileSystem.deleteFile(bgDownloadErrPath);
     if (FileSystem.exists(bgDownloadZipPath)) FileSystem.deleteFile(bgDownloadZipPath);
 
-    var requestUrl:String = bgDownloadUrl;
-    var partPath:String = bgDownloadPartPath;
-    var zipOutPath:String = bgDownloadZipPath;
-    var donePath:String = bgDownloadDonePath;
-    var errPath:String = bgDownloadErrPath;
-
-    CoolUtil.createSafeThread(function()
-    {
-        var res:Dynamic = httpDownloadToFileRequest(requestUrl, partPath, 180, 'ALEPsychModDownloader/1.2', 'https://gamebanana.com/');
-        var ok:Bool = res.ok;
-        var errText:String = trimError(Std.string(res.err));
-
-        if (ok)
-            ok = moveFile(partPath, zipOutPath);
-
-        if (!ok && errText.length > 0)
-            File.saveContent(errPath, errText);
-
-        File.saveContent(donePath, ok ? 'OK' : 'FAIL');
-    });
+    bgDownloadRunning = true;
+    runArchiveDownloadJob();
 
     bgDownloadActive = true;
     return true;
+}
+
+function runArchiveDownloadJob()
+{
+    if (!bgDownloadRunning)
+        return;
+
+    netDownloadUrl = bgDownloadUrl;
+    netDownloadOutPath = bgDownloadPartPath;
+    if (requestDownload())
+    {
+        if (moveFile(bgDownloadPartPath, bgDownloadZipPath))
+        {
+            File.saveContent(bgDownloadDonePath, 'OK');
+        }
+        else
+        {
+            if (hasNetworkError())
+                File.saveContent(bgDownloadErrPath, trimError(lastNetworkError));
+            File.saveContent(bgDownloadDonePath, 'FAIL');
+        }
+    }
+    else
+    {
+        if (hasNetworkError())
+            File.saveContent(bgDownloadErrPath, trimError(lastNetworkError));
+        File.saveContent(bgDownloadDonePath, 'FAIL');
+    }
+
+    bgDownloadRunning = false;
 }
 
 function pollBackgroundDownload()
@@ -1716,7 +1787,7 @@ function pollBackgroundDownload()
             var stat = FileSystem.stat(bgDownloadPartPath);
             sizeLabel = formatBytes(stat.size);
         }
-        catch (e:Dynamic) {}
+        catch (_:Dynamic) {}
     }
 
     if (!FileSystem.exists(bgDownloadDonePath))
@@ -1732,7 +1803,7 @@ function pollBackgroundDownload()
     {
         doneState = File.getContent(bgDownloadDonePath).trim();
     }
-    catch (e:Dynamic) {}
+    catch (_:Dynamic) {}
 
     if (doneState != 'OK' || !FileSystem.exists(bgDownloadZipPath))
     {
@@ -1743,7 +1814,7 @@ function pollBackgroundDownload()
             {
                 err = trimError(File.getContent(bgDownloadErrPath));
             }
-            catch (e:Dynamic) {}
+            catch (_:Dynamic) {}
         }
 
         downloading = false;
@@ -1820,7 +1891,7 @@ function isLikelyAleFromRawList(raw:String):Bool
         return true;
 
     var lower:String = raw.toLowerCase();
-    var markerCount:Int = 0;
+    var markerCount = 0;
 
     for (marker in MOD_MARKERS)
     {
@@ -1897,7 +1968,7 @@ function installArchiveFromFile(zipPath:String, displayName:String, sourceUrl:St
             deleteDirectoryRecursive(outputDir);
         ensureDir(outputDir);
     }
-    catch (e:Dynamic)
+    catch (_:Dynamic)
     {
         return {success: false, message: 'Failed preparing destination directory.'};
     }
@@ -1942,7 +2013,7 @@ function scoreDirectory(dir:String):Int
         return -1;
 
     var score:Int = 0;
-    var markerCount:Int = 0;
+    var markerCount = 0;
     var hasPack:Bool = false;
     var hasCore:Bool = false;
     var legacyHits:Int = 0;
@@ -1990,7 +2061,7 @@ function isAlePsychRoot(dir:String):Bool
     if (!FileSystem.exists(dir) || !FileSystem.isDirectory(dir))
         return false;
 
-    var markerCount:Int = 0;
+    var markerCount = 0;
     var hasPack:Bool = false;
     var hasCore:Bool = false;
     var legacyHits:Int = 0;
@@ -2109,157 +2180,65 @@ function copyPath(fromPath:String, toPath:String):Int
     return 1;
 }
 
-function networkGetText(url:String):String
+function requestText()
+{
+    return networkGetText();
+}
+
+function networkGetText():String
 {
     lastNetworkError = '';
 
-    var res:Dynamic = httpGetTextRequest(url, 30, 'ALEPsychModDownloader/1.1', null);
-    if (res.ok)
-        return Std.string(res.data);
+    netCurlRes = execProcess('curl', ['-fsSL', '--compressed', '--max-time', '30', '-A', 'ALEPsychModDownloader/1.1', netTextUrl]);
+    var curlOk = netCurlRes != null && Reflect.field(netCurlRes, 'ok') == true;
+    if (curlOk)
+        return Std.string(Reflect.field(netCurlRes, 'out'));
 
-    lastNetworkError = trimError(Std.string(res.err));
+    netWgetRes = execProcess('wget', ['-qO-', '--timeout=30', '--user-agent=ALEPsychModDownloader/1.1', netTextUrl]);
+    var wgetOk = netWgetRes != null && Reflect.field(netWgetRes, 'ok') == true;
+    if (wgetOk)
+        return Std.string(Reflect.field(netWgetRes, 'out'));
+
+    lastNetworkError = trimError('curl: ' + Std.string(netCurlRes == null ? '' : Reflect.field(netCurlRes, 'err')) + ' | wget: ' + Std.string(netWgetRes == null ? '' : Reflect.field(netWgetRes, 'err')));
     return '';
 }
 
-function networkDownloadFile(url:String, outPath:String):Bool
+function requestDownload():Bool
+{
+    return networkDownloadFile();
+}
+
+function hasNetworkError():Bool
+{
+    return lastNetworkError != null && lastNetworkError.length > 0;
+}
+
+function networkDownloadFile():Bool
 {
     lastNetworkError = '';
 
-    var res:Dynamic = httpDownloadToFileRequest(url, outPath, 180, 'ALEPsychModDownloader/1.1', 'https://gamebanana.com/');
-    if (res.ok)
+    netCurlRes = execProcess('curl', ['-fL', '--retry', '2', '--max-time', '180', '-A', 'ALEPsychModDownloader/1.1', '-e', 'https://gamebanana.com/', '-o', netDownloadOutPath, netDownloadUrl]);
+    var curlOk = netCurlRes != null && Reflect.field(netCurlRes, 'ok') == true;
+    if (curlOk && FileSystem.exists(netDownloadOutPath))
         return true;
 
-    lastNetworkError = trimError(Std.string(res.err));
+    netWgetRes = execProcess('wget', ['-q', '--tries=2', '--timeout=180', '--user-agent=ALEPsychModDownloader/1.1', '--referer=https://gamebanana.com/', '-O', netDownloadOutPath, netDownloadUrl]);
+    var wgetOk = netWgetRes != null && Reflect.field(netWgetRes, 'ok') == true;
+    if (wgetOk && FileSystem.exists(netDownloadOutPath))
+        return true;
+
+    lastNetworkError = trimError('curl: ' + Std.string(netCurlRes == null ? '' : Reflect.field(netCurlRes, 'err')) + ' | wget: ' + Std.string(netWgetRes == null ? '' : Reflect.field(netWgetRes, 'err')));
     return false;
 }
 
-function httpGetTextRequest(url:String, timeoutSeconds:Int, userAgent:String, referer:String):Dynamic
+function execProcess(cmd, args):Dynamic
 {
-    var data:String = '';
-    var err:String = '';
-    var req:Http = null;
-
     try
     {
-        req = new Http(url);
-        req.cnxTimeout = timeoutSeconds;
-        req.setHeader('User-Agent', userAgent);
-        req.setHeader('Accept', '*/*');
-        if (referer != null && referer.length > 0)
-            req.setHeader('Referer', referer);
-
-        req.onData = function(text:String)
-        {
-            data = text;
-        };
-
-        req.onError = function(message:String)
-        {
-            err = message;
-        };
-
-        req.request(false);
-    }
-    catch (e:Dynamic)
-    {
-        err = Std.string(e);
-    }
-
-    if (err.length == 0 && data != null && data.length > 0)
-    {
-        return {
-            ok: true,
-            data: data,
-            err: ''
-        };
-    }
-
-    var fallback:String = err;
-    if (fallback == null || fallback.length == 0)
-        fallback = 'Empty response';
-
-    return {
-        ok: false,
-        data: '',
-        err: fallback
-    };
-}
-
-function httpDownloadToFileRequest(url:String, outPath:String, timeoutSeconds:Int, userAgent:String, referer:String):Dynamic
-{
-    var bytes:Bytes = null;
-    var err:String = '';
-    var req:Http = null;
-
-    try
-    {
-        req = new Http(url);
-        req.cnxTimeout = timeoutSeconds;
-        req.setHeader('User-Agent', userAgent);
-        req.setHeader('Accept', '*/*');
-        if (referer != null && referer.length > 0)
-            req.setHeader('Referer', referer);
-
-        req.onBytes = function(value:Bytes)
-        {
-            bytes = value;
-        };
-
-        req.onData = function(text:String)
-        {
-            bytes = Bytes.ofString(text);
-        };
-
-        req.onError = function(message:String)
-        {
-            err = message;
-        };
-
-        req.request(false);
-    }
-    catch (e:Dynamic)
-    {
-        err = Std.string(e);
-    }
-
-    if (err.length == 0 && bytes != null && bytes.length > 0)
-    {
-        try
-        {
-            var parent:String = directoryOf(outPath);
-            if (parent.length > 0)
-                ensureDir(parent);
-
-            File.saveBytes(outPath, bytes);
-            return {
-                ok: true,
-                err: ''
-            };
-        }
-        catch (e:Dynamic)
-        {
-            err = Std.string(e);
-        }
-    }
-
-    if (err == null || err.length == 0)
-        err = 'Empty response';
-
-    return {
-        ok: false,
-        err: err
-    };
-}
-
-function execProcess(cmd:String, args:Array<String>):Dynamic
-{
-    var proc:Process = null;
-    try
-    {
-        proc = new Process(cmd, args);
-        var out:String = proc.stdout.readAll().toString();
-        var err:String = proc.stderr.readAll().toString();
-        var code:Int = proc.exitCode();
+        var proc = new Process(cmd, args);
+        var out = proc.stdout.readAll().toString();
+        var err = proc.stderr.readAll().toString();
+        var code = proc.exitCode();
         proc.close();
 
         return {
@@ -2269,101 +2248,21 @@ function execProcess(cmd:String, args:Array<String>):Dynamic
             err: err
         };
     }
-    catch (e:Dynamic)
+    catch (_:Dynamic)
     {
-        if (proc != null)
-            proc.close();
-
         return {
             ok: false,
             code: -1,
             out: '',
-            err: Std.string(e)
+            err: 'process failed'
         };
     }
 }
 
 function unzipTo(zipPath:String, outDir:String):Bool
 {
-    if (unzipToPureHaxe(zipPath, outDir))
-        return true;
-
     var res:Dynamic = execProcess('unzip', ['-qq', '-o', zipPath, '-d', outDir]);
     return res.ok;
-}
-
-function unzipToPureHaxe(zipPath:String, outDir:String):Bool
-{
-    var input:sys.io.FileInput = null;
-    try
-    {
-        ensureDir(outDir);
-
-        input = File.read(zipPath, true);
-        var entries = Reader.readZip(input);
-        input.close();
-        input = null;
-
-        for (entry in entries)
-        {
-            var relativePath:String = sanitizeZipEntryPath(entry.fileName);
-            if (relativePath.length == 0)
-                continue;
-
-            var outputPath:String = joinPath([outDir, relativePath]);
-            var entryName:String = normalizePath(entry.fileName);
-            var isDirectory:Bool = entryName.endsWith('/');
-            if (isDirectory)
-            {
-                ensureDir(outputPath);
-                continue;
-            }
-
-            var parent:String = directoryOf(outputPath);
-            if (parent.length > 0)
-                ensureDir(parent);
-
-            if (entry.compressed)
-                Reader.unzip(entry);
-
-            File.saveBytes(outputPath, entry.data);
-        }
-
-        return true;
-    }
-    catch (e:Dynamic)
-    {
-        if (input != null)
-        {
-            try
-            {
-                input.close();
-            }
-            catch (ignored:Dynamic) {}
-        }
-        return false;
-    }
-}
-
-function sanitizeZipEntryPath(path:String):String
-{
-    if (path == null || path.length == 0)
-        return '';
-
-    var p:String = normalizePath(path).trim();
-    while (p.startsWith('/'))
-        p = p.substring(1);
-    while (p.startsWith('./'))
-        p = p.substring(2);
-
-    if (p.length == 0)
-        return '';
-    if (p.contains('../') || p.startsWith('..'))
-        return '';
-    if (p.length >= 2 && p.charAt(1) == ':')
-        return '';
-
-    return p;
 }
 
 function moveFile(fromPath:String, toPath:String):Bool
@@ -2376,7 +2275,7 @@ function moveFile(fromPath:String, toPath:String):Bool
         FileSystem.rename(fromPath, toPath);
         return true;
     }
-    catch (e:Dynamic)
+    catch (_:Dynamic)
     {
         try
         {
@@ -2445,6 +2344,21 @@ function ensurePackJson(modPath:String, name:String, sourceUrl:String)
 
 function getDownloaderRoot():String
 {
+    var currentMod:String = Paths.mod;
+    if (currentMod != null && currentMod.trim().length > 0)
+        return joinPath([Paths.mods, currentMod]);
+
+    try
+    {
+        for (folder in FileSystem.readDirectory(Paths.mods))
+        {
+            var candidate:String = joinPath([Paths.mods, folder, 'scripts', 'states', 'ModDownloaderState.hx']);
+            if (FileSystem.exists(candidate))
+                return joinPath([Paths.mods, folder]);
+        }
+    }
+    catch (_:Dynamic) {}
+
     return joinPath([Paths.mods, 'moddownloader']);
 }
 
@@ -2591,7 +2505,7 @@ function isUsableImage(path:String):Bool
         var stat = FileSystem.stat(path);
         return stat.size > 24;
     }
-    catch (e:Dynamic)
+    catch (_:Dynamic)
     {
         return false;
     }
@@ -2626,7 +2540,7 @@ function applySpriteImage(sprite:FlxSprite, path:String, width:Int, height:Int):
         sprite.updateHitbox();
         return true;
     }
-    catch (e:Dynamic)
+    catch (_:Dynamic)
     {
         return false;
     }
@@ -2720,3 +2634,5 @@ function captureTypingFallback()
     if (FlxG.keys.justPressed.Y) pushTypedChar(upper ? 'Y' : 'y');
     if (FlxG.keys.justPressed.Z) pushTypedChar(upper ? 'Z' : 'z');
 }
+
+setupMobileButtons();
