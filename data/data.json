@@ -1,0 +1,5 @@
+{
+    "developerMode": true,
+    "scriptsHotReloading": true,
+    "initialState": "GameBananaState"
+}
